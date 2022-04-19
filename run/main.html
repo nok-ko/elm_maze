@@ -1,0 +1,101 @@
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Main</title>
+  <script src="main.js"></script>
+</head>
+
+<body>
+  <div id="myapp"></div>
+  <script>
+    const app = Elm.Maze.init({
+      node: document.getElementById("myapp")
+    });
+    
+    function readMazeData(dimensions, type, buffer) {
+      let dataSize = 0;
+      const mazeSize = dimensions[0] * dimensions[1];
+      // Write two bytes at a time, from both nibbles?
+      let writeTwo = false;
+      switch (type[0]) {
+        case 0:
+          dataSize = Math.ceil(mazeSize / 2);
+          writeTwo = true;
+          break;
+        case 1:
+          dataSize = mazeSize;
+          break;
+      };
+
+
+      const mazeData = new Uint8Array(mazeSize);
+      const packedData = new Uint8Array(buffer, 33, dataSize);
+      for (let i = 0; i < dataSize; i++) {
+        if (!writeTwo) {
+          // Low nibble to start
+          mazeData[i] = (0x0f & packedData[i]);
+        } else {
+          // High nibble otherwise
+          mazeData[i*2] = (0xf0 & packedData[i]) >> 4;
+          mazeData[i*2 + 1] = (0x0f & packedData[i]);
+        }
+      }
+      return mazeData;
+    }
+
+    app.ports.fileSelected.subscribe(function (id) {
+      let node = document.getElementById(id);
+      if (node === null) {
+        return;
+      }
+
+      // If your file upload field allows multiple files, you might
+      // want to consider turning this into a `for` loop.
+      let file = node.files[0];
+      let reader = new FileReader();
+
+      // FileReader API is event based. Once a file is selected
+      // it fires events. We hook into the `onload` event for our reader.
+      reader.onload = (function (event) {
+        console.log(event.target)
+        // The event carries the `target`. The `target` is the file
+        // that was selected. The result is base64 encoded contents of the file.
+        let buffer = event.target.result;
+        // We build up the `ImagePortData` object here that will be passed to our Elm
+        // runtime through the `fileContentRead` subscription.
+
+        const header = new Uint8Array(buffer, 0, 8);
+        console.log(header);
+
+        // (Verify header)
+
+        const dimensions = new Uint32Array(buffer, 24, 2);
+        console.log(dimensions);
+
+        const type = new Uint8Array(buffer, 25, 1);
+        console.log(type);
+
+        const data = readMazeData(dimensions, type, buffer);
+        console.log(JSON.stringify(Array.from(data)));
+
+        let portData = {
+          width: dimensions[0],
+          height: dimensions[1],
+          data: Array.from(data),
+          filename: file.name
+        };
+
+        // We call the `fileContentRead` port with the file data
+        // which will be sent to our Elm runtime via Subscriptions.
+        console.log(portData);
+        app.ports.fileContentRead.send(portData);
+      });
+
+      // Connect our FileReader with the file that was selected in our `input` node.
+      reader.readAsArrayBuffer(file);
+    });
+  </script>
+</body>
+
+</html>
